@@ -66,7 +66,10 @@ class _OpenSSL:
         """
         version_ge_ssl1p1 = False
         parts = library.split('.')
-        if parts[2] >= 1 and parts[3] >= 1:
+        # openssl 1.1 test
+        # on OpenSuSE cutils return 'libcrypto.so.43' as a library name
+        # Debian & Arch return 'libcrypto.so.1.1.0'
+        if len(parts) >= 4 and parts[2] >= 1 and parts[3] >= 1:
             version_ge_ssl1p1 = True
 
         self._lib = ctypes.CDLL(library)
