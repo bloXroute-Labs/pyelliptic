@@ -29,12 +29,31 @@
 # OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
 # IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import sys
 import ctypes
 import ctypes.util
-import re
+import sys
 
-OpenSSL = None
+
+def find_crypto_lib():
+    if sys.platform != 'win32':
+        return ctypes.util.find_library('crypto')
+
+    lib_names = [
+        'libcrypto-1_1.dll',
+        'libcrypto.dll',
+        'libeay32.dll',
+    ]
+
+    # Not using platform.architecture deliberately here. Querying
+    # sys.executable for architecture information may break in frozen apps.
+    is_64bits = sys.maxsize > 2 ** 32
+    if is_64bits:
+        lib_names.insert(0, 'libcrypto-1_1-x64.dll')
+
+    for lib_name in lib_names:
+        path = ctypes.util.find_library(lib_name)
+        if path:
+            return path
 
 
 def get_crypto_lib_version(library):
@@ -610,10 +629,7 @@ class _OpenSSL:
         return OpenSSL.ERR_error_string(OpenSSL.ERR_get_error(), None)
 
 
-libname = ctypes.util.find_library('crypto')
-if libname is None:
-    # For Windows ...
-    libname = ctypes.util.find_library('libeay32.dll')
+libname = find_crypto_lib()
 if libname is None:
     raise Exception("Couldn't load OpenSSL lib ...")
 OpenSSL = _OpenSSL(libname)
