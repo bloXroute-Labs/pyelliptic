@@ -32,8 +32,49 @@
 import sys
 import ctypes
 import ctypes.util
+import re
 
 OpenSSL = None
+
+
+def get_crypto_lib_version(library):
+    try:
+        # Since OpenSSL 1.1, OpenSSL_version_num() is available
+        OpenSSL_version_num = library.OpenSSL_version_num
+        OpenSSL_version_num.restype = ctypes.c_long
+        OpenSSL_version_num.argtypes = []
+
+        version = OpenSSL_version_num()
+        return parse_OpenSSL_version_num(version)
+
+    except AttributeError:
+
+        SSLeay_version = library.SSLeay_version
+        SSLeay_version.restype = ctypes.c_char_p
+        SSLeay_version.argtypes = [ctypes.c_int]
+
+        version = SSLeay_version(0)
+        return parse_SSLeay_version(version)
+
+
+def parse_OpenSSL_version_num(version):
+    # OPENSSL_VERSION_NUMBER is a numeric release version identifier
+    # MNNFFPPS: major minor fix patch status
+    # i.e. 0x00090605f == 0.9.6e release
+
+    fix = (version >> 12) & 0xFF
+    minor = (version >> 20) & 0xFF
+    major = (version >> 28) & 0xFF
+
+    return 'OpenSSL', major, minor, fix
+
+
+def parse_SSLeay_version(version):
+    name, version_info = str(version).split(' ', 1)
+    version_info = version_info.split(' ')[0]
+    major, minor, patch = version_info.split('.')
+
+    return name, int(major), int(minor), patch
 
 
 class CipherName:
@@ -64,17 +105,20 @@ class _OpenSSL:
         """
         Build the wrapper
         """
-        version_ge_ssl1p1 = False
-        parts = library.split('.')
-        # openssl 1.1 test
-        # on OpenSuSE cutils return 'libcrypto.so.43' as a library name
-        # Debian & Arch return 'libcrypto.so.1.1.0'
-        if len(parts) >= 4 and parts[2] >= 1 and parts[3] >= 1:
-            version_ge_ssl1p1 = True
-
         self._lib = ctypes.CDLL(library)
+        name, major, minor, patch = get_crypto_lib_version(self._lib)
+
+        self.using_openssl = name == 'OpenSSL'
+        self.using_openssl_1_1 = (
+            self.using_openssl
+            and major >= 1
+            and minor >= 1
+        )
 
         self.pointer = ctypes.pointer
+        self.memset = ctypes.memset
+        self.memmove = ctypes.memmove
+
         self.c_int = ctypes.c_int
         self.byref = ctypes.byref
         self.create_string_buffer = ctypes.create_string_buffer
@@ -112,6 +156,10 @@ class _OpenSSL:
         self.EC_GROUP_get_degree.restype = ctypes.c_int
         self.EC_GROUP_get_degree.argtypes = [ctypes.c_void_p]
 
+        self.EC_GROUP_method_of = self._lib.EC_GROUP_method_of
+        self.EC_GROUP_method_of.restype = ctypes.c_void_p
+        self.EC_GROUP_method_of.argtypes = [ctypes.c_void_p]
+
         self.EC_KEY_free = self._lib.EC_KEY_free
         self.EC_KEY_free.restype = None
         self.EC_KEY_free.argtypes = [ctypes.c_void_p]
@@ -140,10 +188,6 @@ class _OpenSSL:
         self.EC_KEY_get0_group.restype = ctypes.c_void_p
         self.EC_KEY_get0_group.argtypes = [ctypes.c_void_p]
 
-        self.EC_POINT_get_affine_coordinates_GFp = self._lib.EC_POINT_get_affine_coordinates_GFp
-        self.EC_POINT_get_affine_coordinates_GFp.restype = ctypes.c_int
-        self.EC_POINT_get_affine_coordinates_GFp.argtypes = 5 * [ctypes.c_void_p]
-
         self.EC_KEY_set_private_key = self._lib.EC_KEY_set_private_key
         self.EC_KEY_set_private_key.restype = ctypes.c_int
         self.EC_KEY_set_private_key.argtypes = [ctypes.c_void_p,
@@ -158,10 +202,6 @@ class _OpenSSL:
         self.EC_KEY_set_group.restype = ctypes.c_int
         self.EC_KEY_set_group.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
 
-        self.EC_POINT_set_affine_coordinates_GFp = self._lib.EC_POINT_set_affine_coordinates_GFp
-        self.EC_POINT_set_affine_coordinates_GFp.restype = ctypes.c_int
-        self.EC_POINT_set_affine_coordinates_GFp.argtypes = 5 * [ctypes.c_void_p]
-
         self.EC_POINT_new = self._lib.EC_POINT_new
         self.EC_POINT_new.restype = ctypes.c_void_p
         self.EC_POINT_new.argtypes = [ctypes.c_void_p]
@@ -170,9 +210,41 @@ class _OpenSSL:
         self.EC_POINT_free.restype = None
         self.EC_POINT_free.argtypes = [ctypes.c_void_p]
 
+        self.EC_POINT_get_affine_coordinates_GFp = self._lib.EC_POINT_get_affine_coordinates_GFp
+        self.EC_POINT_get_affine_coordinates_GFp.restype = ctypes.c_int
+        self.EC_POINT_get_affine_coordinates_GFp.argtypes = 5 * [ctypes.c_void_p]
+
+        self.EC_POINT_set_affine_coordinates_GFp = self._lib.EC_POINT_set_affine_coordinates_GFp
+        self.EC_POINT_set_affine_coordinates_GFp.restype = ctypes.c_int
+        self.EC_POINT_set_affine_coordinates_GFp.argtypes = 5 * [ctypes.c_void_p]
+
+        self.EC_POINT_get_affine_coordinates_GF2m = self._lib.EC_POINT_get_affine_coordinates_GF2m
+        self.EC_POINT_get_affine_coordinates_GF2m.restype = ctypes.c_int
+        self.EC_POINT_get_affine_coordinates_GF2m.argtypes = 5 * [ctypes.c_void_p]
+
+        self.EC_METHOD_get_field_type = self._lib.EC_METHOD_get_field_type
+        self.EC_METHOD_get_field_type.restype = ctypes.c_int
+        self.EC_METHOD_get_field_type.argtypes = [ctypes.c_void_p]
+
+        self.BN_CTX_new = self._lib.BN_CTX_new
+        self.BN_CTX_new.restype = ctypes.c_void_p
+        self.BN_CTX_new.argtypes = []
+
+        self.BN_CTX_end = self._lib.BN_CTX_end
+        self.BN_CTX_end.restype = ctypes.c_void_p
+        self.BN_CTX_end.argtypes = []
+
         self.BN_CTX_free = self._lib.BN_CTX_free
         self.BN_CTX_free.restype = None
         self.BN_CTX_free.argtypes = [ctypes.c_void_p]
+
+        self.BN_CTX_start = self._lib.BN_CTX_start
+        self.BN_CTX_start.restype = None
+        self.BN_CTX_start.argtypes = [ctypes.c_void_p]
+
+        self.BN_CTX_get = self._lib.BN_CTX_get
+        self.BN_CTX_get.restype = ctypes.c_void_p
+        self.BN_CTX_get.argtypes = [ctypes.c_void_p]
 
         self.EC_POINT_mul = self._lib.EC_POINT_mul
         self.EC_POINT_mul.restype = ctypes.c_int
@@ -185,19 +257,20 @@ class _OpenSSL:
         self.EC_KEY_set_private_key.argtypes = [ctypes.c_void_p,
                                                 ctypes.c_void_p]
 
-        if not version_ge_ssl1p1:
+        if self.using_openssl_1_1:
+            self.EC_KEY_set_method = self._lib.EC_KEY_set_method
+            self.EC_KEY_set_method.restype = ctypes.c_int
+            self.EC_KEY_set_method.argtypes = [ctypes.c_void_p,
+                                               ctypes.c_void_p]
+        else:
             self.ECDH_OpenSSL = self._lib.ECDH_OpenSSL
-            self._lib.ECDH_OpenSSL.restype = ctypes.c_void_p
-            self._lib.ECDH_OpenSSL.argtypes = []
+            self.ECDH_OpenSSL.restype = ctypes.c_void_p
+            self.ECDH_OpenSSL.argtypes = []
 
-        self.BN_CTX_new = self._lib.BN_CTX_new
-        self._lib.BN_CTX_new.restype = ctypes.c_void_p
-        self._lib.BN_CTX_new.argtypes = []
-
-        if not version_ge_ssl1p1:
             self.ECDH_set_method = self._lib.ECDH_set_method
-            self._lib.ECDH_set_method.restype = ctypes.c_int
-            self._lib.ECDH_set_method.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+            self.ECDH_set_method.restype = ctypes.c_int
+            self.ECDH_set_method.argtypes = [ctypes.c_void_p,
+                                            ctypes.c_void_p]
 
         self.ECDH_compute_key = self._lib.ECDH_compute_key
         self.ECDH_compute_key.restype = ctypes.c_int
@@ -234,19 +307,17 @@ class _OpenSSL:
 
         try:
             self.EVP_aes_128_ctr = self._lib.EVP_aes_128_ctr
-        except AttributeError:
-            pass
-        else:
             self.EVP_aes_128_ctr.restype = ctypes.c_void_p
             self.EVP_aes_128_ctr.argtypes = []
+        except AttributeError:
+            pass
 
         try:
             self.EVP_aes_256_ctr = self._lib.EVP_aes_256_ctr
-        except AttributeError:
-            pass
-        else:
             self.EVP_aes_256_ctr.restype = ctypes.c_void_p
             self.EVP_aes_256_ctr.argtypes = []
+        except AttributeError:
+            pass
 
         self.EVP_aes_128_ofb = self._lib.EVP_aes_128_ofb
         self.EVP_aes_128_ofb.restype = ctypes.c_void_p
@@ -268,7 +339,11 @@ class _OpenSSL:
         self.EVP_rc4.restype = ctypes.c_void_p
         self.EVP_rc4.argtypes = []
 
-        if not version_ge_ssl1p1:
+        if self.using_openssl_1_1:
+            self.EVP_CIPHER_CTX_reset = self._lib.EVP_CIPHER_CTX_reset
+            self.EVP_CIPHER_CTX_reset.restype = ctypes.c_int
+            self.EVP_CIPHER_CTX_reset.argtypes = [ctypes.c_void_p]
+        else:
             self.EVP_CIPHER_CTX_cleanup = self._lib.EVP_CIPHER_CTX_cleanup
             self.EVP_CIPHER_CTX_cleanup.restype = ctypes.c_int
             self.EVP_CIPHER_CTX_cleanup.argtypes = [ctypes.c_void_p]
@@ -313,7 +388,7 @@ class _OpenSSL:
         self.EVP_DigestFinal_ex.argtypes = [ctypes.c_void_p,
                                             ctypes.c_void_p, ctypes.c_void_p]
 
-        if not version_ge_ssl1p1:
+        if not self.using_openssl_1_1:
             self.EVP_ecdsa = self._lib.EVP_ecdsa
             self._lib.EVP_ecdsa.restype = ctypes.c_void_p
             self._lib.EVP_ecdsa.argtypes = []
@@ -336,7 +411,15 @@ class _OpenSSL:
                                       ctypes.c_int,
                                       ctypes.c_void_p]
 
-        if not version_ge_ssl1p1:
+        if self.using_openssl_1_1:
+            self.EVP_MD_CTX_new = self._lib.EVP_MD_CTX_new
+            self.EVP_MD_CTX_new.restype = ctypes.c_void_p
+            self.EVP_MD_CTX_new.argtypes = []
+
+            self.EVP_MD_CTX_free = self._lib.EVP_MD_CTX_free
+            self.EVP_MD_CTX_free.restype = None
+            self.EVP_MD_CTX_free.argtypes = [ctypes.c_void_p]
+        else:
             self.EVP_MD_CTX_create = self._lib.EVP_MD_CTX_create
             self.EVP_MD_CTX_create.restype = ctypes.c_void_p
             self.EVP_MD_CTX_create.argtypes = []
@@ -405,12 +488,6 @@ class _OpenSSL:
             'aes-256-ofb': CipherName('aes-256-ofb',
                                       self._lib.EVP_aes_256_ofb,
                                       16),
-            # 'aes-128-ctr': CipherName('aes-128-ctr',
-            #                           self._lib.EVP_aes_128_ctr,
-            #                           16),
-            # 'aes-256-ctr': CipherName('aes-256-ctr',
-            #                           self._lib.EVP_aes_256_ctr,
-            #                           16),
             'bf-cfb': CipherName('bf-cfb',
                                  self.EVP_bf_cfb64,
                                  8),

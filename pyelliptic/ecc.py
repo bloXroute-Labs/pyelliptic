@@ -307,9 +307,13 @@ class ECC:
             if (OpenSSL.EC_KEY_set_private_key(own_key, own_priv_key)) == 0:
                 raise Exception("[OpenSSL] EC_KEY_set_private_key FAIL ... " + OpenSSL.get_error())
 
-            OpenSSL.ECDH_set_method(own_key, OpenSSL.ECDH_OpenSSL())
-            ecdh_keylen = OpenSSL.ECDH_compute_key(
-                ecdh_keybuffer, 32, other_pub_key, own_key, 0)
+            if OpenSSL.using_openssl_1_1:
+                ecdh_keylen = self.ecdh_compute_key(
+                    ecdh_keybuffer, 32, other_pub_key, own_key)
+            else:
+                OpenSSL.ECDH_set_method(own_key, OpenSSL.ECDH_OpenSSL())
+                ecdh_keylen = OpenSSL.ECDH_compute_key(
+                    ecdh_keybuffer, 32, other_pub_key, own_key, 0)
 
             if ecdh_keylen != 32:
                 raise Exception("[OpenSSL] ECDH keylen FAIL ... " + OpenSSL.get_error())
@@ -323,6 +327,99 @@ class ECC:
             OpenSSL.EC_POINT_free(other_pub_key)
             OpenSSL.EC_KEY_free(own_key)
             OpenSSL.BN_free(own_priv_key)
+
+    def ecdh_compute_key(self, out, outlen, pubkey, ec_key):
+        # Based on crypto/ecdh/ech_ossl.c (ecdh_compute_key)
+        INT_MAX = 2147483637
+        NID_X9_62_prime_field = 406
+
+        if outlen > INT_MAX:
+            raise Exception("[OpenSSL] ecdh_compute_key 'outlen'"
+                            "exceeds 'INT_MAX'")
+
+        point = None
+        buf = None
+        ctx = OpenSSL.BN_CTX_new()
+
+        if not ctx:
+            raise Exception("[OpenSSL] ecdh_compute_key BN_CTX_new FAIL ... " +
+                            OpenSSL.get_error())
+
+        try:
+
+            OpenSSL.BN_CTX_start(ctx)
+            x = OpenSSL.BN_CTX_get(ctx)
+            y = OpenSSL.BN_CTX_get(ctx)
+
+            privkey = OpenSSL.EC_KEY_get0_private_key(ec_key)
+            if not privkey:
+                raise Exception("[OpenSSL] ecdh_compute_key  "
+                                "EC_KEY_get0_private_key FAIL ... " +
+                                OpenSSL.get_error())
+
+            group = OpenSSL.EC_KEY_get0_group(ec_key)
+            point = OpenSSL.EC_POINT_new(group)
+            if not point:
+                raise Exception("[OpenSSL] ecdh_compute_key "
+                                "EC_POINT_new FAIL ... " + OpenSSL.get_error())
+
+            mul = OpenSSL.EC_POINT_mul(group, point, 0, pubkey, privkey, ctx)
+            if not mul:
+                raise Exception("[OpenSSL] ecdh_compute_key EC_POINT_mul "
+                                "FAIL ... " + OpenSSL.get_error())
+
+            group_method = OpenSSL.EC_GROUP_method_of(group)
+            field_type = OpenSSL.EC_METHOD_get_field_type(group_method)
+
+            if field_type == NID_X9_62_prime_field:
+                if not OpenSSL.EC_POINT_get_affine_coordinates_GFp(group,
+                                                                   point,
+                                                                   x, y, ctx):
+                    raise Exception("[OpenSSL] ecdh_compute_key "
+                                    "EC_POINT_get_affine_coordinates_GFp "
+                                    "FAIL ... " + OpenSSL.get_error())
+            else:
+                if not OpenSSL.EC_POINT_get_affine_coordinates_GF2m(group,
+                                                                    point,
+                                                                    x, y, ctx):
+                    raise Exception("[OpenSSL] ecdh_compute_key "
+                                    "EC_POINT_get_affine_coordinates_GF2m"
+                                    "FAIL ... " + OpenSSL.get_error())
+
+            buf_length = int((OpenSSL.EC_GROUP_get_degree(group) + 7) / 8)
+            length = OpenSSL.BN_num_bytes(x)
+
+            if length > buf_length:
+                raise Exception("[OpenSSL] ecdh_compute_key internal error " +
+                                OpenSSL.get_error())
+
+            buf = OpenSSL.malloc(0, buf_length)
+            if not buf:
+                raise Exception("[OpenSSL] ecdh_compute_key malloc error " +
+                                OpenSSL.get_error())
+
+            off = buf_length - length
+            buf_off = OpenSSL.byref(buf, off)
+
+            OpenSSL.memset(buf, 0, off)
+            if length != OpenSSL.BN_bn2bin(x, buf_off):
+                raise Exception("[OpenSSL] ecdh_compute_key BN_bn2bin error " +
+                                OpenSSL.get_error())
+
+            if outlen > buf_length:
+                outlen = buf_length
+
+            OpenSSL.memmove(out, buf, outlen)
+            return outlen
+
+        finally:
+            if point:
+                OpenSSL.EC_POINT_free(point)
+            if ctx:
+                OpenSSL.BN_CTX_free(ctx)
+            if buf:
+                OpenSSL.memset(buf, 0, buf_length)
+                del buf
 
     def check_key(self, privkey, pubkey):
         """
@@ -383,10 +480,14 @@ class ECC:
             size = len(inputb)
             buff = OpenSSL.malloc(inputb, size)
             digest = OpenSSL.malloc(0, 64)
-            md_ctx = OpenSSL.EVP_MD_CTX_create()
             dgst_len = OpenSSL.pointer(OpenSSL.c_int(0))
             siglen = OpenSSL.pointer(OpenSSL.c_int(0))
             sig = OpenSSL.malloc(0, 151)
+
+            if OpenSSL.using_openssl_1_1:
+                md_ctx = OpenSSL.EVP_MD_CTX_new()
+            else:
+                md_ctx = OpenSSL.EVP_MD_CTX_create()
 
             key = OpenSSL.EC_KEY_new_by_curve_name(self.curve)
             if key == 0:
@@ -413,7 +514,9 @@ class ECC:
             if (OpenSSL.EC_KEY_check_key(key)) == 0:
                 raise Exception("[OpenSSL] EC_KEY_check_key FAIL ... " + OpenSSL.get_error())
 
-            OpenSSL.EVP_MD_CTX_init(md_ctx)
+            if not OpenSSL.using_openssl_1_1:
+                OpenSSL.EVP_MD_CTX_init(md_ctx)
+
             OpenSSL.EVP_DigestInit_ex(md_ctx, OpenSSL.EVP_sha256(), None)
 
             if (OpenSSL.EVP_DigestUpdate(md_ctx, buff, size)) == 0:
@@ -432,7 +535,11 @@ class ECC:
             OpenSSL.BN_free(pub_key_y)
             OpenSSL.BN_free(priv_key)
             OpenSSL.EC_POINT_free(pub_key)
-            OpenSSL.EVP_MD_CTX_destroy(md_ctx)
+
+            if OpenSSL.using_openssl_1_1:
+                OpenSSL.EVP_MD_CTX_free(md_ctx)
+            else:
+                OpenSSL.EVP_MD_CTX_destroy(md_ctx)
 
     def verify(self, sig, inputb):
         """
@@ -444,7 +551,12 @@ class ECC:
             binputb = OpenSSL.malloc(inputb, len(inputb))
             digest = OpenSSL.malloc(0, 64)
             dgst_len = OpenSSL.pointer(OpenSSL.c_int(0))
-            md_ctx = OpenSSL.EVP_MD_CTX_create()
+
+            if OpenSSL.using_openssl_1_1:
+                md_ctx = OpenSSL.EVP_MD_CTX_new()
+            else:
+                md_ctx = OpenSSL.EVP_MD_CTX_create()
+                OpenSSL.EVP_MD_CTX_init(md_ctx)
 
             key = OpenSSL.EC_KEY_new_by_curve_name(self.curve)
 
@@ -467,7 +579,6 @@ class ECC:
             if (OpenSSL.EC_KEY_check_key(key)) == 0:
                 raise Exception("[OpenSSL] EC_KEY_check_key FAIL ... " + OpenSSL.get_error())
 
-            OpenSSL.EVP_MD_CTX_init(md_ctx)
             OpenSSL.EVP_DigestInit_ex(md_ctx, OpenSSL.EVP_sha256(), None)
             if (OpenSSL.EVP_DigestUpdate(md_ctx, binputb, len(inputb))) == 0:
                 raise Exception("[OpenSSL] EVP_DigestUpdate FAIL ... " + OpenSSL.get_error())
@@ -490,7 +601,11 @@ class ECC:
             OpenSSL.BN_free(pub_key_x)
             OpenSSL.BN_free(pub_key_y)
             OpenSSL.EC_POINT_free(pub_key)
-            OpenSSL.EVP_MD_CTX_destroy(md_ctx)
+
+            if OpenSSL.using_openssl_1_1:
+                OpenSSL.EVP_MD_CTX_free(md_ctx)
+            else:
+                OpenSSL.EVP_MD_CTX_destroy(md_ctx)
 
     def encrypt(self, data, pubkey, ephemcurve=None, ciphername='aes-256-cbc'):
         """

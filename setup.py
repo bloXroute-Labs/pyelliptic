@@ -33,14 +33,14 @@ from setuptools import setup, find_packages
 
 setup(
     name="pyelliptic",
-    version='1.5.7',
-    url='https://github.com/yann2192/pyelliptic',
+    version='1.5.9',
+    url='https://github.com/mfranciszkiewicz/pyelliptic',
     license='BSD',
     description=
     "Python OpenSSL wrapper for modern cryptography with " +
     "ECC, AES, HMAC, Blowfish, ...",
-    author='Yann GUIBET',
-    author_email='yannguibet@gmail.com',
+    author='Yann GUIBET, Marek Franciszkiewicz',
+    author_email='yannguibet@gmail.com, marek@golem.network',
     packages=find_packages(),
     classifiers=[
         'Operating System :: Unix',
