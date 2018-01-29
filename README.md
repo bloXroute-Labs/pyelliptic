@@ -1,6 +1,6 @@
-[![CircleCI](https://circleci.com/gh/mfranciszkiewicz/pyelliptic/tree/openssl_1_1.svg?style=svg)](https://circleci.com/gh/mfranciszkiewicz/pyelliptic/tree/openssl_1_1)
-[![AppVeyor](https://ci.appveyor.com/api/projects/status/q5d2t8ji0sj9tjts/branch/openssl_1_1?svg=true)](https://ci.appveyor.com/project/mfranciszkiewicz/pyelliptic/branch/openssl_1_1)
-[![Travis CI](https://travis-ci.org/mfranciszkiewicz/pyelliptic.svg?branch=openssl_1_1)](https://travis-ci.org/mfranciszkiewicz/pyelliptic)
+[![CircleCI](https://img.shields.io/circleci/project/github/mfranciszkiewicz/pyelliptic/openssl_1_1.svg?label=linux)](https://circleci.com/gh/mfranciszkiewicz/pyelliptic/tree/openssl_1_1)
+[![AppVeyor](https://img.shields.io/appveyor/ci/mfranciszkiewicz/pyelliptic/openssl_1_1.svg?label=windows)](https://ci.appveyor.com/project/mfranciszkiewicz/pyelliptic/branch/openssl_1_1)
+[![Travis CI](https://img.shields.io/travis/mfranciszkiewicz/pyelliptic/openssl_1_1.svg?label=macOS)](https://travis-ci.org/mfranciszkiewicz/pyelliptic)
 
 # PyElliptic
 
