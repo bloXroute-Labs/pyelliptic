@@ -67,7 +67,7 @@ class TestCommand(test, object):
         if sys.platform == 'win32':
             lib_name = 'libcrypto-1_1-x64.dll'
         elif sys.platform == 'darwin':
-            lib_name = 'libcrypto.1.1.0.dylib'
+            lib_name = 'libcrypto.1.1.dylib'
         else:
             lib_name = 'libcrypto.so.1.1'
 

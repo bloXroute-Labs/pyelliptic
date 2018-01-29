@@ -1,11 +1,13 @@
 import unittest
 from binascii import unhexlify, hexlify
 
-from pyelliptic import Cipher
+from pyelliptic import Cipher, OpenSSL
 
 
 class TestCipher(unittest.TestCase):
 
+    @unittest.skipIf('aes-256-ctr' not in OpenSSL.cipher_algo,
+                     'aes-256-ctr is not supported by the SSL library')
     def test_aes256ctr(self):
         ciphername = "aes-256-ctr"
 
