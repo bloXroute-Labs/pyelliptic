@@ -237,9 +237,12 @@ class _OpenSSL:
         self.EC_POINT_set_affine_coordinates_GFp.restype = ctypes.c_int
         self.EC_POINT_set_affine_coordinates_GFp.argtypes = 5 * [ctypes.c_void_p]
 
-        self.EC_POINT_get_affine_coordinates_GF2m = self._lib.EC_POINT_get_affine_coordinates_GF2m
-        self.EC_POINT_get_affine_coordinates_GF2m.restype = ctypes.c_int
-        self.EC_POINT_get_affine_coordinates_GF2m.argtypes = 5 * [ctypes.c_void_p]
+        try:
+            self.EC_POINT_get_affine_coordinates_GF2m = self._lib.EC_POINT_get_affine_coordinates_GF2m
+            self.EC_POINT_get_affine_coordinates_GF2m.restype = ctypes.c_int
+            self.EC_POINT_get_affine_coordinates_GF2m.argtypes = 5 * [ctypes.c_void_p]
+        except AttributeError:
+            self.EC_POINT_get_affine_coordinates_GF2m = None
 
         self.EC_METHOD_get_field_type = self._lib.EC_METHOD_get_field_type
         self.EC_METHOD_get_field_type.restype = ctypes.c_int
