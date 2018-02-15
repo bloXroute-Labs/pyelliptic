@@ -379,6 +379,10 @@ class ECC:
                                     "EC_POINT_get_affine_coordinates_GFp "
                                     "FAIL ... " + OpenSSL.get_error())
             else:
+                if OpenSSL.EC_POINT_get_affine_coordinates_GF2m is None:
+                    raise Exception("[OpenSSL] "
+                                    "NID_X9_62_characteristic_two_field "
+                                    "unsupported")
                 if not OpenSSL.EC_POINT_get_affine_coordinates_GF2m(group,
                                                                     point,
                                                                     x, y, ctx):
