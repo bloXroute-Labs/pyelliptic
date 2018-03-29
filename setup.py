@@ -28,7 +28,7 @@
 # WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
 # OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
 # IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-from setuptools import setup, find_packages
+from setuptools import setup
 
 from setuptools.command.test import test
 
@@ -77,7 +77,7 @@ class TestCommand(test, object):
 
 setup(
     name="pyelliptic",
-    version='1.5.9',
+    version='1.5.10',
     url='https://github.com/mfranciszkiewicz/pyelliptic',
     license='BSD',
     description=
@@ -85,7 +85,7 @@ setup(
     "ECC, AES, HMAC, Blowfish, ...",
     author='Yann GUIBET, Marek Franciszkiewicz',
     author_email='yannguibet@gmail.com, marek@golem.network',
-    packages=find_packages(),
+    packages=['pyelliptic'],
     cmdclass={
         'test': TestCommand
     },
